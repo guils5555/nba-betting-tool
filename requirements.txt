@@ -1,5 +1,3 @@
 streamlit
-gspread
 pandas
 scipy
-google-auth
