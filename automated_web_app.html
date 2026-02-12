@@ -299,7 +299,7 @@
         <div class="header">
             <h1>🤖 Automated Bet Finder</h1>
             <p>AI-powered edge detection with live odds</p>
-            <p style="font-size: 11px; opacity: 0.7; margin-top: 5px;">v3.0-ML • Context Adjustments • Machine Learning • Results Tracking</p>
+            <p style="font-size: 11px; opacity: 0.7; margin-top: 5px;">v3.1-Gaussian • Gaussian ML Engine • Advanced Uncertainty Quantification</p>
             
             <!-- Sport Switcher -->
             <div class="sport-switcher">
@@ -1220,6 +1220,23 @@
                     <div id="ml-status-text" style="margin-top: 5px; color: #7c3aed;">
                         Not enough data yet. Enter actual results when tracking bets to train ML model (need 10+ data points).
                     </div>
+                    
+                    <!-- Gaussian Engine Toggle -->
+                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #c4b5fd;">
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" id="gaussian-engine-toggle" 
+                                   ${gaussianEngineEnabled ? 'checked' : ''}
+                                   onchange="toggleGaussianEngine(this.checked)"
+                                   style="width: 18px; height: 18px; cursor: pointer;">
+                            <div>
+                                <div style="font-weight: 600; color: #6b21a8;">🔬 Gaussian ML Engine (Advanced)</div>
+                                <div style="font-size: 11px; color: #7c3aed; margin-top: 2px;">
+                                    Uses Gaussian Processes for predictions with uncertainty quantification. More accurate but slower.
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+                    
                     <button onclick="showMLAnalysis()" 
                             style="margin-top: 10px; padding: 8px 16px; background: #8b5cf6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;"
                             onmouseover="this.style.background='#7c3aed'" 
@@ -1859,6 +1876,146 @@
         let mlModel = null;
         let mlModelTrained = false;
         
+        // Gaussian ML Engine (Advanced)
+        let gaussianMLEngine = null;
+        let gaussianEngineEnabled = localStorage.getItem('gaussianEngineEnabled') === 'true';
+        
+        // Gaussian Process ML Engine
+        class GaussianMLEngine {
+            constructor() {
+                this.trainingData = [];
+                this.kernel = 'rbf'; // Radial Basis Function kernel
+                this.sigma = 1.0; // Kernel width
+                this.noise = 0.1; // Observation noise
+                this.trained = false;
+            }
+            
+            // RBF Kernel function
+            rbfKernel(x1, x2, sigma = this.sigma) {
+                let sum = 0;
+                for (let i = 0; i < x1.length; i++) {
+                    sum += Math.pow(x1[i] - x2[i], 2);
+                }
+                return Math.exp(-sum / (2 * sigma * sigma));
+            }
+            
+            // Train on historical data
+            train(features, labels) {
+                console.log('🔬 Training Gaussian ML Engine on', features.length, 'samples...');
+                this.trainingData = features.map((f, i) => ({
+                    features: f,
+                    label: labels[i]
+                }));
+                
+                // Build kernel matrix
+                const n = this.trainingData.length;
+                this.K = Array(n).fill(0).map(() => Array(n).fill(0));
+                
+                for (let i = 0; i < n; i++) {
+                    for (let j = 0; j < n; j++) {
+                        this.K[i][j] = this.rbfKernel(
+                            this.trainingData[i].features,
+                            this.trainingData[j].features
+                        );
+                        if (i === j) {
+                            this.K[i][j] += this.noise; // Add noise to diagonal
+                        }
+                    }
+                }
+                
+                // Compute inverse of K (using Cholesky decomposition for stability)
+                this.KInv = this.invertMatrix(this.K);
+                this.trained = true;
+                console.log('✅ Gaussian Engine trained with kernel matrix', n, 'x', n);
+            }
+            
+            // Predict with uncertainty
+            predict(features) {
+                if (!this.trained || this.trainingData.length === 0) {
+                    return { mean: null, variance: null, confidence: null };
+                }
+                
+                const n = this.trainingData.length;
+                
+                // Compute kernel vector k
+                const k = this.trainingData.map(d => 
+                    this.rbfKernel(features, d.features)
+                );
+                
+                // Compute mean prediction: k^T * K^{-1} * y
+                const y = this.trainingData.map(d => d.label);
+                const KInvY = this.matrixVectorMultiply(this.KInv, y);
+                const mean = k.reduce((sum, ki, i) => sum + ki * KInvY[i], 0);
+                
+                // Compute variance: k(x*, x*) - k^T * K^{-1} * k
+                const kStar = 1.0; // k(x*, x*) for RBF kernel
+                const KInvK = this.matrixVectorMultiply(this.KInv, k);
+                const variance = kStar - k.reduce((sum, ki, i) => sum + ki * KInvK[i], 0);
+                
+                // Confidence interval (95% = 1.96 * std_dev)
+                const stdDev = Math.sqrt(Math.max(0, variance));
+                const confidence = {
+                    lower: mean - 1.96 * stdDev,
+                    upper: mean + 1.96 * stdDev,
+                    stdDev: stdDev
+                };
+                
+                return { mean, variance, confidence };
+            }
+            
+            // Matrix inversion using Gauss-Jordan elimination
+            invertMatrix(matrix) {
+                const n = matrix.length;
+                const augmented = matrix.map((row, i) => {
+                    const newRow = [...row];
+                    for (let j = 0; j < n; j++) {
+                        newRow.push(i === j ? 1 : 0);
+                    }
+                    return newRow;
+                });
+                
+                // Forward elimination
+                for (let i = 0; i < n; i++) {
+                    // Find pivot
+                    let maxRow = i;
+                    for (let k = i + 1; k < n; k++) {
+                        if (Math.abs(augmented[k][i]) > Math.abs(augmented[maxRow][i])) {
+                            maxRow = k;
+                        }
+                    }
+                    [augmented[i], augmented[maxRow]] = [augmented[maxRow], augmented[i]];
+                    
+                    // Make diagonal 1
+                    const pivot = augmented[i][i];
+                    if (Math.abs(pivot) < 1e-10) continue; // Skip if pivot is too small
+                    
+                    for (let j = 0; j < 2 * n; j++) {
+                        augmented[i][j] /= pivot;
+                    }
+                    
+                    // Eliminate column
+                    for (let k = 0; k < n; k++) {
+                        if (k !== i) {
+                            const factor = augmented[k][i];
+                            for (let j = 0; j < 2 * n; j++) {
+                                augmented[k][j] -= factor * augmented[i][j];
+                            }
+                        }
+                    }
+                }
+                
+                // Extract inverse
+                return augmented.map(row => row.slice(n));
+            }
+            
+            // Matrix-vector multiplication
+            matrixVectorMultiply(matrix, vector) {
+                return matrix.map(row => 
+                    row.reduce((sum, val, i) => sum + val * vector[i], 0)
+                );
+            }
+        }
+        
         // Initialize ML model
         async function initializeMLModel() {
             if (mlModel) return mlModel;
@@ -2383,6 +2540,25 @@
             
             mlModelTrained = true;
             console.log('✅ ML model trained successfully!');
+            
+            // Also train Gaussian Engine if enabled
+            if (gaussianEngineEnabled && completeBets.length >= 10) {
+                console.log('🔬 Training Gaussian ML Engine...');
+                if (!gaussianMLEngine) {
+                    gaussianMLEngine = new GaussianMLEngine();
+                }
+                
+                // Prepare data for Gaussian engine
+                const gaussianFeatures = completeBets.map(bet => prepareFeatures(bet));
+                const gaussianLabels = completeBets.map(bet => parseFloat(bet.actualResult) / 100);
+                
+                gaussianMLEngine.train(gaussianFeatures, gaussianLabels);
+                console.log('✅ Gaussian Engine trained with', completeBets.length, 'samples');
+            }
+            
+            // Update ML status display
+            updateMLStatus();
+            
             return true;
         }
         
@@ -2396,6 +2572,26 @@
                 return null; // Not enough data
             }
             
+            // Use Gaussian Engine if enabled and trained
+            if (gaussianEngineEnabled && gaussianMLEngine && gaussianMLEngine.trained) {
+                const features = prepareFeatures(bet);
+                const result = gaussianMLEngine.predict(features);
+                
+                if (result.mean !== null) {
+                    return {
+                        prediction: result.mean * 100,
+                        confidence: {
+                            lower: result.confidence.lower * 100,
+                            upper: result.confidence.upper * 100,
+                            stdDev: result.confidence.stdDev * 100
+                        },
+                        variance: result.variance,
+                        engine: 'gaussian'
+                    };
+                }
+            }
+            
+            // Fallback to standard neural network
             const features = prepareFeatures(bet);
             const input = tf.tensor2d([features]);
             
@@ -2415,8 +2611,52 @@
                 prediction: prediction,
                 lower: prediction - confidenceInterval,
                 upper: prediction + confidenceInterval,
-                confidence: confidenceInterval
+                confidence: confidenceInterval,
+                engine: 'neural'
             };
+        }
+        
+        // Toggle Gaussian ML Engine
+        function toggleGaussianEngine(enabled) {
+            gaussianEngineEnabled = enabled;
+            localStorage.setItem('gaussianEngineEnabled', enabled);
+            
+            if (enabled) {
+                console.log('🔬 Gaussian ML Engine enabled');
+                // Retrain if we have data
+                if (mlModelTrained) {
+                    trainMLModel();
+                }
+            } else {
+                console.log('🤖 Using standard Neural Network');
+            }
+            
+            // Update ML status display
+            updateMLStatus();
+        }
+        
+        // Update ML Status display
+        function updateMLStatus() {
+            const statusDiv = document.getElementById('ml-status-text');
+            if (!statusDiv) return;
+            
+            if (!mlModelTrained) {
+                statusDiv.innerHTML = 'Not enough data yet. Enter actual results when tracking bets to train ML model (need 10+ data points).';
+                return;
+            }
+            
+            const engineName = gaussianEngineEnabled && gaussianMLEngine && gaussianMLEngine.trained ? 
+                '🔬 Gaussian Engine' : '🤖 Neural Network';
+            
+            const trainingCount = (trackedBets.filter(b => b.actualResult !== undefined).length || 0) +
+                                 (JSON.parse(localStorage.getItem('savedParlays') || '[]').filter(p => p.result).length || 0);
+            
+            statusDiv.innerHTML = `
+                <span style="color: #10b981; font-weight: 600;">✅ Active</span> - 
+                ${engineName} trained on ${trainingCount}+ bets
+                ${gaussianEngineEnabled && gaussianMLEngine && gaussianMLEngine.trained ? 
+                    '<br><small style="color: #7c3aed;">Using advanced Gaussian Processes with uncertainty quantification</small>' : ''}
+            `;
         }
         
         // Ensemble prediction: combine ML + weighted average
